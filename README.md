@@ -81,6 +81,10 @@ Pre-trained weights ship in `checkpoints/` (`best.json` is the strongest).
 | `src/mcts-player.ts` | Wraps the nets as a PUCT search via `@euriklis/mcts` |
 | `src/model-io.ts` | Save/load checkpoints |
 
+> 📐 See **[MATH.md](./MATH.md)** for the full formulation — every formula
+> (features, policy/value nets, PUCT, REINFORCE & AlphaZero losses, Adam)
+> mapped to the file that implements it.
+
 ## Design notes
 
 - **Legality is free** — only ever score moves from the legal generator (no
