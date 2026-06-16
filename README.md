@@ -93,4 +93,4 @@ Pre-trained weights ship in `checkpoints/` (`best.json` is the strongest).
 
 ## License
 
-MIT (or your choice — update as needed).
+[MIT](./LICENSE) © 2026 Velislav Karastoychev
