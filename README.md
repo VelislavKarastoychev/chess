@@ -1,6 +1,7 @@
-# Chess
+# Bay Mile
 
-A small, educational **reinforcement-learning chess engine** built on the
+**Bay Mile** *(бай Миле)* is a small, educational **reinforcement-learning chess
+engine** built on the
 [`@euriklis/mathematics`](https://github.com/VelislavKarastoychev/euriklis) `Tensor`
 library. Each *legal* move is described by a hand-designed vector of
 tactical/positional signals; neural **policy** and **value** networks score the
