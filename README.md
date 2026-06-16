@@ -1,6 +1,8 @@
 # Bay Mile
 
-![Bay Mile — the chess engine's namesake](./BayMile.png)
+<p align="center">
+  <img src="BayMile-round.png" alt="Bay Mile — the chess engine's namesake" width="180">
+</p>
 
 **Bay Mile** *(бай Миле)* is a small, educational **reinforcement-learning chess
 engine** built on the
