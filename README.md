@@ -1,4 +1,4 @@
-# @euriklis/chess
+# Chess
 
 A small, educational **reinforcement-learning chess engine** built on the
 [`@euriklis/mathematics`](https://github.com/VelislavKarastoychev/euriklis) `Tensor`
