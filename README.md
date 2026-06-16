@@ -1,5 +1,9 @@
 # Bay Mile
 
+<p align="center">
+  <img src="BayMile.png" alt="Bay Mile — the chess engine's namesake" width="240">
+</p>
+
 **Bay Mile** *(бай Миле)* is a small, educational **reinforcement-learning chess
 engine** built on the
 [`@euriklis/mathematics`](https://github.com/VelislavKarastoychev/euriklis) `Tensor`
