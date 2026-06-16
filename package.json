@@ -1,0 +1,25 @@
+{
+  "name": "@euriklis/chess",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Feature-vector move-scoring chess engine: RL (REINFORCE + AlphaZero/MCTS self-play) built on the @euriklis/mathematics Tensor library",
+  "main": "./src/index.ts",
+  "scripts": {
+    "demo": "bun run examples/demo.ts",
+    "play": "bun run examples/move.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@euriklis/mathematics": "latest",
+    "@euriklis/mcts": "latest"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.4.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VelislavKarastoychev/chess.git"
+  }
+}
