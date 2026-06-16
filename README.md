@@ -81,22 +81,6 @@ Pre-trained weights ship in `checkpoints/` (`best.json` is the strongest).
 | `src/mcts-player.ts` | Wraps the nets as a PUCT search via `@euriklis/mcts` |
 | `src/model-io.ts` | Save/load checkpoints |
 
----
-
-## Honest results & limitations
-
-- **Move generation is correct** — `perft` matches the published counts for the
-  start position, Kiwipete, and standard edge-case positions.
-- **It learns to win material** — a short league run lifts average material vs a
-  random opponent well into the double digits; it stops hanging pieces.
-- **MCTS at play time helps** — lookahead catches free captures and mates the raw
-  policy misses (see the mate-in-one test).
-- **It is weak.** ~1–2k parameters, trained for minutes on CPU. The opening
-  wanders, and it has no real king-safety/strategic understanding. The
-  AlphaZero distillation **plateaus** at this scale (too few simulations, no
-  replay buffer) — documented behavior, not a bug. Real strength needs orders of
-  magnitude more compute (AlphaZero: 800 sims/move, ~44M games).
-
 ## Design notes
 
 - **Legality is free** — only ever score moves from the legal generator (no
