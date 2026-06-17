@@ -107,25 +107,34 @@ const convW = (cout: number, cin: number, k: number, seed: number): Tensor => {
   return Tensor.random({ shape: [cout, cin, k, k], type: "float64", seed, from: -Math.sqrt(1 / fan), to: Math.sqrt(1 / fan), requiresGrad: true });
 };
 
-export interface ConvValueOpts { channels?: number; hidden?: number; seed?: number; }
+export interface ConvValueOpts { channels?: number; hidden?: number; blocks?: number; seed?: number; }
+
+interface ResBlock { w1: Tensor; b1: Tensor; w2: Tensor; b2: Tensor; }
 
 export class ConvValueNet {
   readonly channels: number;
   readonly hidden: number;
-  c1w: Tensor; c1b: Tensor;   // conv 12→C, 3×3 pad1
-  c2w: Tensor; c2b: Tensor;   // conv C→C, 3×3 pad1
-  fc1w: Tensor; fc1b: Tensor; // (C·64) → H
-  fc2w: Tensor; fc2b: Tensor; // H → 1
+  readonly blocks: number;
+  stemW: Tensor; stemB: Tensor;   // conv PLANES→C, 3×3 pad1 (stem)
+  res: ResBlock[];                // residual tower: relu(x + conv(relu(conv(x))))
+  fc1w: Tensor; fc1b: Tensor;     // (C·64) → H
+  fc2w: Tensor; fc2b: Tensor;     // H → 1
   readonly kind = "conv" as const;
 
   constructor(opts: ConvValueOpts = {}) {
-    const C = (this.channels = opts.channels ?? 16);
-    const H = (this.hidden = opts.hidden ?? 64);
+    const C = (this.channels = opts.channels ?? 24);
+    const H = (this.hidden = opts.hidden ?? 96);
+    const B = (this.blocks = opts.blocks ?? 2);
     const s = opts.seed ?? 99;
-    this.c1w = convW(C, PLANES, 3, s + 1);
-    this.c1b = Tensor.zeros({ shape: [C], type: "float64", requiresGrad: true });
-    this.c2w = convW(C, C, 3, s + 2);
-    this.c2b = Tensor.zeros({ shape: [C], type: "float64", requiresGrad: true });
+    this.stemW = convW(C, PLANES, 3, s + 1);
+    this.stemB = Tensor.zeros({ shape: [C], type: "float64", requiresGrad: true });
+    this.res = [];
+    for (let i = 0; i < B; i++) {
+      this.res.push({
+        w1: convW(C, C, 3, s + 10 + 4 * i), b1: Tensor.zeros({ shape: [C], type: "float64", requiresGrad: true }),
+        w2: convW(C, C, 3, s + 11 + 4 * i), b2: Tensor.zeros({ shape: [C], type: "float64", requiresGrad: true }),
+      });
+    }
     this.fc1w = proj(C * BOARD_HW, H, s + 3);
     this.fc1b = Tensor.zeros({ shape: [1, H], type: "float64", requiresGrad: true });
     this.fc2w = proj(H, 1, s + 4);
@@ -133,20 +142,27 @@ export class ConvValueNet {
   }
 
   parameters(): Tensor[] {
-    return [this.c1w, this.c1b, this.c2w, this.c2b, this.fc1w, this.fc1b, this.fc2w, this.fc2b];
+    const ps: Tensor[] = [this.stemW, this.stemB];
+    for (const r of this.res) ps.push(r.w1, r.b1, r.w2, r.b2);
+    ps.push(this.fc1w, this.fc1b, this.fc2w, this.fc2b);
+    return ps;
   }
 
   /** Batched value over a [B·PLANE_DIM] planes buffer → [B,1] in (-1,1). */
   async forwardPlanes(planes: Float64Array, B: number): Promise<Tensor> {
-    const x = new Tensor({ shape: [B, PLANES, 8, 8], type: "float64" });
-    x.view.set(planes);
-    let h = await (await x.conv2d(this.c1w, this.c1b, { stride: 1, padding: 1 })).relu(); // [B,C,8,8]
-    h = await (await h.conv2d(this.c2w, this.c2b, { stride: 1, padding: 1 })).relu();      // [B,C,8,8]
-    const flat = await h.reshape([B, this.channels * BOARD_HW]);                            // [B, C·64]
+    const xin = new Tensor({ shape: [B, PLANES, 8, 8], type: "float64" });
+    xin.view.set(planes);
+    let x = await (await xin.conv2d(this.stemW, this.stemB, { stride: 1, padding: 1 })).relu(); // [B,C,8,8]
+    for (const r of this.res) {
+      let h = await (await x.conv2d(r.w1, r.b1, { stride: 1, padding: 1 })).relu();
+      h = await h.conv2d(r.w2, r.b2, { stride: 1, padding: 1 });
+      x = await (await x.plus(h)).relu();                                                        // residual skip
+    }
+    const flat = await x.reshape([B, this.channels * BOARD_HW]);                                  // [B, C·64]
     const ones = new Tensor({ shape: [B, 1], type: "float64" }); ones.view.fill(1);
-    let f = await (await flat.times(this.fc1w)).plus(await ones.times(this.fc1b));          // [B,H]
+    let f = await (await flat.times(this.fc1w)).plus(await ones.times(this.fc1b));                // [B,H]
     f = await f.relu();
-    const v = await (await f.times(this.fc2w)).plus(await ones.times(this.fc2b));           // [B,1]
+    const v = await (await f.times(this.fc2w)).plus(await ones.times(this.fc2b));                 // [B,1]
     return await v.tanh();
   }
 

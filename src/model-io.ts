@@ -7,7 +7,7 @@ import { ConvValueNet } from "./value";
 
 export interface Checkpoint {
   policy: { hidden: number; params: number[][] };
-  value: { kind: "conv"; channels: number; hidden: number; params: number[][] };
+  value: { kind: "conv"; channels: number; hidden: number; blocks?: number; params: number[][] };
   meta: Record<string, unknown>;
 }
 
@@ -20,7 +20,7 @@ const load = (net: { parameters(): { view: { set(a: number[]): void } }[] }, par
 export function snapshot(policy: MLPPolicy, value: ConvValueNet, meta: Record<string, unknown> = {}): Checkpoint {
   return {
     policy: { hidden: policy.hidden, params: dump(policy) },
-    value: { kind: "conv", channels: value.channels, hidden: value.hidden, params: dump(value) },
+    value: { kind: "conv", channels: value.channels, hidden: value.hidden, blocks: value.blocks, params: dump(value) },
     meta,
   };
 }
@@ -36,7 +36,7 @@ export function restore(ckpt: Checkpoint): { policy: MLPPolicy; value: ConvValue
   load(policy, ckpt.policy.params);
   const v = ckpt.value;
   const isConv = v && (v as { kind?: string }).kind === "conv";
-  const value = new ConvValueNet({ channels: isConv ? v.channels : undefined, hidden: isConv ? v.hidden : undefined });
+  const value = new ConvValueNet({ channels: isConv ? v.channels : undefined, hidden: isConv ? v.hidden : undefined, blocks: isConv ? v.blocks : undefined });
   // Load only if EVERY param matches in element count too — the input plane
   // count is baked into the first conv weight, so an old (e.g. 18-plane)
   // checkpoint is shape-incompatible with a newer encoder and must start fresh.

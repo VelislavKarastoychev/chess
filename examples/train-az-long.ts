@@ -34,7 +34,10 @@ import { ConvValueNet } from "../src/value";
 
 const TARGET = Number(process.env.CHESS_AZ_TARGET ?? 5000);
 const GAMES = Number(process.env.CHESS_AZ_GAMES ?? 32);    // more concurrent games → bigger eval batches
-const SIMS = Number(process.env.CHESS_AZ_SIMS ?? 60);      // ramp up once the net is decent
+const SIMS = Number(process.env.CHESS_AZ_SIMS ?? 100);     // deeper search → MCTS actually improves on the policy
+const VCHANNELS = Number(process.env.CHESS_AZ_VCHANNELS ?? 24);  // conv value net width
+const VBLOCKS = Number(process.env.CHESS_AZ_VBLOCKS ?? 2);       // residual blocks
+const VHIDDEN = Number(process.env.CHESS_AZ_VHIDDEN ?? 96);      // value head width
 const BATCH = Number(process.env.CHESS_AZ_BATCH ?? 256);
 const TRAIN_STEPS = Number(process.env.CHESS_AZ_TRAINSTEPS ?? 8);
 const REPLAY_CAP = Number(process.env.CHESS_AZ_REPLAY ?? 8000);
@@ -65,7 +68,7 @@ if (resumeExists || bestExists) {
   console.log(`resume ${resumeExists ? RESUME : BEST} @ iter ${startIter}${r.freshValue ? "  (value net started fresh — incompatible/old checkpoint)" : ""}`);
 } else {
   policy = new MLPPolicy({ hidden: 32 });
-  value = new ConvValueNet({ channels: 16, hidden: 64 });
+  value = new ConvValueNet({ channels: VCHANNELS, hidden: VHIDDEN, blocks: VBLOCKS });
   console.log("fresh nets (no checkpoint found)");
 }
 
@@ -78,6 +81,7 @@ const clock = () => new Date().toLocaleTimeString("en-GB"); // HH:MM:SS
 console.log(
   `[${clock()}] AZ overhaul — target ${TARGET}, ${GAMES} games × ${SIMS} sims, maxPlies ${MAXPLIES}, ` +
   `termFrac ${TERM_FRAC}, tempMoves ${TEMP_MOVES}, replay ${REPLAY_CAP}, batch ${BATCH}, ` +
+  `value ${value.channels}ch×${value.blocks}blk×${value.hidden}h, ` +
   `${WORKERS > 1 ? `${WORKERS} self-play workers` : "single process"}`,
 );
 
