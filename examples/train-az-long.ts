@@ -25,6 +25,7 @@
 import { Adam } from "@euriklis/mathematics/tensor";
 import { loadCheckpoint, restore, snapshot, saveCheckpoint, type Checkpoint } from "../src/model-io";
 import { selfPlayBatch, trainStepAZ, ReplayBuffer } from "../src/alphazero";
+import { runParallelSelfPlay } from "../src/parallel-selfplay";
 import { playMatch, type Net } from "../src/gating";
 import { tacticalSuite } from "../src/tactical";
 import { evaluateVsRandom, mulberry32 } from "../src/selfplay";
@@ -44,6 +45,7 @@ const GATE_GAMES = Number(process.env.CHESS_AZ_GATEGAMES ?? 20);
 const GATE_MARGIN = Number(process.env.CHESS_AZ_GATEMARGIN ?? 0.55);
 const TEMP_MOVES = Number(process.env.CHESS_AZ_TEMPMOVES ?? 24);   // plies of τ=1 before greedy
 const TERM_FRAC = Number(process.env.CHESS_AZ_TERMFRAC ?? 0.25);   // share of games run to a true terminal
+const WORKERS = Number(process.env.CHESS_AZ_WORKERS ?? 1);         // >1 → multi-process self-play (use N cores)
 const RESUME = "checkpoints/latest-az.json", BEST = "checkpoints/best.json";
 
 const cloneNet = (policy: MLPPolicy, value: ConvValueNet): Net => {
@@ -72,13 +74,16 @@ const rng = mulberry32(1234 + startIter);
 const buffer = new ReplayBuffer(REPLAY_CAP);
 let best: Net = cloneNet(policy, value); // champion held in memory for gating
 
-console.log(`AZ overhaul — target ${TARGET}, ${GAMES} games × ${SIMS} sims, replay ${REPLAY_CAP}, batch ${BATCH}`);
+console.log(`AZ overhaul — target ${TARGET}, ${GAMES} games × ${SIMS} sims, replay ${REPLAY_CAP}, batch ${BATCH}${WORKERS > 1 ? `, ${WORKERS} self-play workers` : " (single process)"}`);
 
 for (let it = startIter + 1; it <= TARGET; it++) {
-  const sp = await selfPlayBatch(policy, value, rng, {
+  const spOpts = {
     games: GAMES, numSimulations: SIMS, maxPlies: MAXPLIES, cPuct: 1.5, dirichletAlpha: 0.3, maxBatch: BATCH,
     temperatureMoves: TEMP_MOVES, terminalFraction: TERM_FRAC,
-  });
+  };
+  const sp = WORKERS > 1
+    ? await runParallelSelfPlay(policy, value, it, { ...spOpts, workers: WORKERS })
+    : await selfPlayBatch(policy, value, rng, spOpts);
   buffer.push(sp.samples);
 
   let loss = 0, pl = 0, vl = 0;
