@@ -37,8 +37,14 @@ export function restore(ckpt: Checkpoint): { policy: MLPPolicy; value: ConvValue
   const v = ckpt.value;
   const isConv = v && (v as { kind?: string }).kind === "conv";
   const value = new ConvValueNet({ channels: isConv ? v.channels : undefined, hidden: isConv ? v.hidden : undefined });
+  // Load only if EVERY param matches in element count too — the input plane
+  // count is baked into the first conv weight, so an old (e.g. 18-plane)
+  // checkpoint is shape-incompatible with a newer encoder and must start fresh.
+  const params = value.parameters();
+  const shapesMatch = isConv && Array.isArray(v.params) && v.params.length === params.length
+    && params.every((p, i) => v.params[i]?.length === p.view.length);
   let freshValue = true;
-  if (isConv && Array.isArray(v.params) && v.params.length === value.parameters().length) {
+  if (shapesMatch) {
     load(value, v.params);
     freshValue = false;
   }

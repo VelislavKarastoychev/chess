@@ -36,3 +36,17 @@ test("threefold repetition is detected by counting position keys", () => {
   shuffle();
   expect(bump()).toBe(3); // back to start, 3rd → draw by repetition
 });
+
+import { encodePlanes, PLANES, BOARD_HW } from "../src/planes";
+
+test("repetition plane (18) encodes prior-occurrence count", () => {
+  expect(PLANES).toBe(19);
+  const s = startState();
+  const planeSum = (buf: Float64Array, plane: number) => { let x = 0; for (let k = 0; k < BOARD_HW; k++) x += buf[plane * BOARD_HW + k]!; return x; };
+  expect(planeSum(encodePlanes(s, 0), 18)).toBe(0);            // first occurrence → empty
+  expect(planeSum(encodePlanes(s, 1), 18)).toBeCloseTo(0.5 * 64); // seen once → 0.5
+  expect(planeSum(encodePlanes(s, 2), 18)).toBeCloseTo(1.0 * 64); // seen twice → 1.0
+  expect(planeSum(encodePlanes(s, 5), 18)).toBeCloseTo(1.0 * 64); // capped at 2
+  // piece planes unaffected by reps
+  expect(planeSum(encodePlanes(s, 0), 0)).toBe(planeSum(encodePlanes(s, 2), 0));
+});

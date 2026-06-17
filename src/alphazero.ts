@@ -74,7 +74,8 @@ export async function selfPlayGame(
     const res = await runMcts(chessEnv, evaluator, s, {
       numSimulations: sims, cPuct, temperature, dirichletAlpha: dir, backup: "negamax", rng,
     });
-    recs.push({ moveFeats: featureMatrix(s, moves), planes: encodePlanes(s), pi: res.policy, mover: s.turn });
+    // `reps - 1` = prior occurrences of this position (0 first time, 1 second).
+    recs.push({ moveFeats: featureMatrix(s, moves), planes: encodePlanes(s, reps - 1), pi: res.policy, mover: s.turn });
     makeMove(s, res.action);
 
     // Adjudication: a sustained decisive material lead counts as a win, so the
