@@ -52,11 +52,18 @@ export class BatchedEvaluator {
         const target = Math.max(1, Math.min(this.active, this.maxBatch));
         if (this.queue.length >= target) this.flush();
         else if (!this.scheduled) {
+          // Defer the partial-batch flush to a MACROtask (setTimeout 0), not a
+          // microtask: a microtask fires inside the current drain, before all
+          // games have re-enqueued their next leaf, so batches collapse (and
+          // how early depends on the Bun version's microtask scheduling — on
+          // 1.3.x it coalesced only ~8/32). A macrotask fires AFTER the whole
+          // microtask queue drains, so every game that will enqueue this round
+          // has done so → near-full batches, deterministically across versions.
           this.scheduled = true;
-          queueMicrotask(() => {
+          setTimeout(() => {
             this.scheduled = false;
             if (this.queue.length) this.flush();
-          });
+          }, 0);
         }
       });
   }
