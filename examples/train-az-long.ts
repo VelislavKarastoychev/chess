@@ -74,7 +74,14 @@ const rng = mulberry32(1234 + startIter);
 const buffer = new ReplayBuffer(REPLAY_CAP);
 let best: Net = cloneNet(policy, value); // champion held in memory for gating
 
-console.log(`AZ overhaul — target ${TARGET}, ${GAMES} games × ${SIMS} sims, replay ${REPLAY_CAP}, batch ${BATCH}${WORKERS > 1 ? `, ${WORKERS} self-play workers` : " (single process)"}`);
+const clock = () => new Date().toLocaleTimeString("en-GB"); // HH:MM:SS
+console.log(
+  `[${clock()}] AZ overhaul — target ${TARGET}, ${GAMES} games × ${SIMS} sims, maxPlies ${MAXPLIES}, ` +
+  `termFrac ${TERM_FRAC}, tempMoves ${TEMP_MOVES}, replay ${REPLAY_CAP}, batch ${BATCH}, ` +
+  `${WORKERS > 1 ? `${WORKERS} self-play workers` : "single process"}`,
+);
+
+let lastEvalT = performance.now(), lastEvalIt = startIter; // for s/iter timing
 
 for (let it = startIter + 1; it <= TARGET; it++) {
   const spOpts = {
@@ -100,8 +107,11 @@ for (let it = startIter + 1; it <= TARGET; it++) {
     const gate = await playMatch(cloneNet(policy, value), best, { games: GATE_GAMES, numSimulations: SIMS, maxPlies: MAXPLIES, rng: mulberry32(7 + it) });
     const promoted = gate.aScore >= GATE_MARGIN;
     if (promoted) { best = cloneNet(policy, value); await saveCheckpoint(BEST, snapshot(policy, value, { iter: it, mode: "alphazero", gateScore: gate.aScore, tactical: tac.passed })); }
+    const nowT = performance.now();
+    const perIter = (nowT - lastEvalT) / 1000 / (it - lastEvalIt); // wall seconds / iteration over this window
+    lastEvalT = nowT; lastEvalIt = it;
     console.log(
-      `iter ${String(it).padStart(5)}/${TARGET}  loss ${loss.toFixed(3)} (CE ${pl.toFixed(3)}/V ${vl.toFixed(3)})  ` +
+      `[${clock()} ${perIter.toFixed(1)}s/it] iter ${String(it).padStart(5)}/${TARGET}  loss ${loss.toFixed(3)} (CE ${pl.toFixed(3)}/V ${vl.toFixed(3)})  ` +
       `decisive ${sp.decisive}/${GAMES} avgPlies ${sp.avgPlies.toFixed(0)} batch≈${sp.avgBatch.toFixed(1)}  ` +
       `tactic ${tac.passed}/${tac.total}  vsRand ${(vr.score * 100).toFixed(0)}%  gate ${(gate.aScore * 100).toFixed(0)}%${promoted ? " *PROMOTED" : ""}`,
     );
