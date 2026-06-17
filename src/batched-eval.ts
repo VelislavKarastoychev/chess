@@ -24,6 +24,7 @@
 import type { Evaluator, Evaluation } from "@euriklis/mcts";
 import type { State, Move } from "./rules";
 import { featureMatrix } from "./features";
+import { repsOf } from "./mcts-player";
 import type { MLPPolicy } from "./policy";
 import type { ConvValueNet } from "./value";
 
@@ -78,8 +79,9 @@ export class BatchedEvaluator {
     this.batches++;
     this.positions += batch.length;
 
-    // VALUE: one batched conv forward over all leaf positions → [B,1].
-    const vT = await this.value.forwardStates(batch.map((b) => b.state));
+    // VALUE: one batched conv forward over all leaf positions → [B,1], each with
+    // its repetition count (so leaves that repeat a position read as drawish).
+    const vT = await this.value.forwardStates(batch.map((b) => b.state), batch.map((b) => repsOf(b.state)));
     const vv = vT.view as Float64Array;
 
     // POLICY: concatenate every leaf's legal-move features into one [ΣL, F]

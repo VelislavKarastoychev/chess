@@ -9,7 +9,7 @@
  */
 
 import { runMcts } from "@euriklis/mcts";
-import { chessEnv, neuralEvaluator } from "./mcts-player";
+import { chessEnv, neuralEvaluator, seedRoot } from "./mcts-player";
 import { type Color, type State, WHITE, startState, generateMoves, makeMove, inCheck, positionKey } from "./rules";
 import { whiteMaterial, ConvValueNet } from "./value";
 import { MLPPolicy } from "./policy";
@@ -26,9 +26,11 @@ async function playGame(white: Net, black: Net, opts: Required<Omit<MatchOpts, "
     const moves = generateMoves(s);
     if (moves.length === 0) return inCheck(s) ? ((-s.turn) as Color) : 0;
     if (s.halfmove >= 100) return 0;
-    const reps = (repCount.get(positionKey(s)) ?? 0) + 1;
-    repCount.set(positionKey(s), reps);
-    if (reps >= 3) return 0; // threefold repetition
+    const key = positionKey(s);
+    const prior = repCount.get(key) ?? 0;
+    repCount.set(key, prior + 1);
+    if (prior + 1 >= 3) return 0; // threefold repetition
+    seedRoot(s, repCount, prior);
     const side = s.turn === WHITE ? white : black;
     const res = await runMcts(chessEnv, neuralEvaluator(side.policy, side.value), s, {
       numSimulations: opts.numSimulations, cPuct: 1.5, temperature: 0, dirichletAlpha: 0, backup: "negamax", rng: opts.rng,

@@ -21,7 +21,7 @@
 
 import { Tensor } from "@euriklis/mathematics/tensor";
 import { runMcts, type Evaluator } from "@euriklis/mcts";
-import { chessEnv } from "./mcts-player";
+import { chessEnv, seedRoot } from "./mcts-player";
 import { type Color, type State, type Move, startState, generateMoves, makeMove, inCheck, positionKey } from "./rules";
 import { featureMatrix } from "./features";
 import { whiteMaterial, ConvValueNet } from "./value";
@@ -63,9 +63,13 @@ export async function selfPlayGame(
     const moves = generateMoves(s);
     if (moves.length === 0) { result = inCheck(s) ? ((-s.turn) as Color) : 0; terminal = inCheck(s) ? "checkmate" : "stalemate"; break; }
     if (s.halfmove >= 100) { result = 0; terminal = "draw50"; break; }
-    const reps = (repCount.get(positionKey(s)) ?? 0) + 1;
-    repCount.set(positionKey(s), reps);
-    if (reps >= 3) { result = 0; terminal = "repetition"; break; }
+    const key = positionKey(s);
+    const prior = repCount.get(key) ?? 0; // prior occurrences of this position
+    repCount.set(key, prior + 1);
+    if (prior + 1 >= 3) { result = 0; terminal = "repetition"; break; }
+    // Seed the search with the game's repetition history so MCTS sees threefold
+    // draws and leaf evals get the real repetition count.
+    seedRoot(s, repCount, prior);
 
     // Temperature schedule: explore early (τ=1, sample ∝ visits), then play the
     // deciding/endgame phase greedily (τ→0, argmax visits) for sharper π and
@@ -74,8 +78,7 @@ export async function selfPlayGame(
     const res = await runMcts(chessEnv, evaluator, s, {
       numSimulations: sims, cPuct, temperature, dirichletAlpha: dir, backup: "negamax", rng,
     });
-    // `reps - 1` = prior occurrences of this position (0 first time, 1 second).
-    recs.push({ moveFeats: featureMatrix(s, moves), planes: encodePlanes(s, reps - 1), pi: res.policy, mover: s.turn });
+    recs.push({ moveFeats: featureMatrix(s, moves), planes: encodePlanes(s, prior), pi: res.policy, mover: s.turn });
     makeMove(s, res.action);
 
     // Adjudication: a sustained decisive material lead counts as a win, so the

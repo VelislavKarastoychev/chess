@@ -50,3 +50,24 @@ test("repetition plane (18) encodes prior-occurrence count", () => {
   // piece planes unaffected by reps
   expect(planeSum(encodePlanes(s, 0), 0)).toBe(planeSum(encodePlanes(s, 2), 0));
 });
+
+import { chessEnv, seedRoot, repsOf } from "../src/mcts-player";
+
+test("MCTS env threads repetition along the search path → threefold draw", () => {
+  const root = startState();
+  // base = game-history counts incl. the current root occurrence (as self-play seeds it)
+  const base = new Map<string, number>([[positionKey(root), 1]]);
+  seedRoot(root, base, 0);
+  const shuffle = (st: typeof root) => {
+    for (const u of ["g1f3", "b8c6", "f3g1", "c6b8"]) st = chessEnv.apply(st, parseUci(st, u)!);
+    return st;
+  };
+  let st = shuffle(root);                       // back to start: root was 1 prior occurrence
+  expect(positionKey(st)).toBe(positionKey(root));
+  expect(repsOf(st)).toBe(1);
+  expect(chessEnv.isTerminal(st)).toBe(false);  // 2nd occurrence — not yet a draw
+  st = shuffle(st);                             // back to start again: 2 prior occurrences
+  expect(repsOf(st)).toBe(2);
+  expect(chessEnv.isTerminal(st)).toBe(true);   // 3rd occurrence → draw by repetition
+  expect(chessEnv.reward(st)).toBe(0);          // draw value
+});

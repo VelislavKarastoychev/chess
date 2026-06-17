@@ -150,13 +150,15 @@ export class ConvValueNet {
     return await v.tanh();
   }
 
-  /** Value of one position (mover's perspective), [1,1]. */
-  async forward(s: State): Promise<Tensor> {
-    return await this.forwardPlanes(encodePlanes(s), 1);
+  /** Value of one position (mover's perspective), [1,1]. `reps` = prior
+   *  occurrences of the position (for the repetition plane; 0 if unknown). */
+  async forward(s: State, reps = 0): Promise<Tensor> {
+    return await this.forwardPlanes(encodePlanes(s, reps), 1);
   }
 
-  /** Values of many positions in one batched forward → [B,1]. */
-  async forwardStates(states: State[]): Promise<Tensor> {
-    return await this.forwardPlanes(encodeBatch(states), states.length);
+  /** Values of many positions in one batched forward → [B,1]. `reps[i]` = prior
+   *  occurrences of state i (default 0). */
+  async forwardStates(states: State[], reps?: number[]): Promise<Tensor> {
+    return await this.forwardPlanes(encodeBatch(states, reps), states.length);
   }
 }
