@@ -10,7 +10,7 @@
 
 import { runMcts } from "@euriklis/mcts";
 import { chessEnv, neuralEvaluator } from "./mcts-player";
-import { type Color, type State, WHITE, startState, generateMoves, makeMove, inCheck } from "./rules";
+import { type Color, type State, WHITE, startState, generateMoves, makeMove, inCheck, positionKey } from "./rules";
 import { whiteMaterial, ConvValueNet } from "./value";
 import { MLPPolicy } from "./policy";
 
@@ -21,10 +21,14 @@ export interface MatchOpts { games?: number; numSimulations?: number; maxPlies?:
 async function playGame(white: Net, black: Net, opts: Required<Omit<MatchOpts, "games">>): Promise<Color | 0> {
   const s: State = startState();
   let leadPlies = 0, leadColor: Color | 0 = 0;
+  const repCount = new Map<string, number>();
   for (let ply = 0; ply < opts.maxPlies; ply++) {
     const moves = generateMoves(s);
     if (moves.length === 0) return inCheck(s) ? ((-s.turn) as Color) : 0;
     if (s.halfmove >= 100) return 0;
+    const reps = (repCount.get(positionKey(s)) ?? 0) + 1;
+    repCount.set(positionKey(s), reps);
+    if (reps >= 3) return 0; // threefold repetition
     const side = s.turn === WHITE ? white : black;
     const res = await runMcts(chessEnv, neuralEvaluator(side.policy, side.value), s, {
       numSimulations: opts.numSimulations, cPuct: 1.5, temperature: 0, dirichletAlpha: 0, backup: "negamax", rng: opts.rng,

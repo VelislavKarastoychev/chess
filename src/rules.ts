@@ -297,6 +297,18 @@ export function gameStatus(s: State): Status {
   return "ongoing";
 }
 
+/**
+ * Compact key identifying a position for threefold-repetition detection: the
+ * FIDE "same position" fields — piece placement, side to move, castling rights
+ * and the en-passant target. Two states with the same key are the same
+ * position; a key seen three times in a game is a draw by repetition.
+ */
+export function positionKey(s: State): string {
+  let k = "";
+  for (let i = 0; i < 64; i++) k += String.fromCharCode(s.board[i]! + 7); // -6..6 → 1..13
+  return `${k}${s.turn === WHITE ? "w" : "b"},${s.castling},${s.ep}`;
+}
+
 // ---- FEN & display ----------------------------------------------------------
 export const START_FEN =
   "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";

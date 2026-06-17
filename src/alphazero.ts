@@ -22,7 +22,7 @@
 import { Tensor } from "@euriklis/mathematics/tensor";
 import { runMcts, type Evaluator } from "@euriklis/mcts";
 import { chessEnv } from "./mcts-player";
-import { type Color, type State, type Move, startState, generateMoves, makeMove, inCheck } from "./rules";
+import { type Color, type State, type Move, startState, generateMoves, makeMove, inCheck, positionKey } from "./rules";
 import { featureMatrix } from "./features";
 import { whiteMaterial, ConvValueNet } from "./value";
 import { PLANE_DIM, encodePlanes } from "./planes";
@@ -57,11 +57,15 @@ export async function selfPlayGame(
   const recs: { moveFeats: number[][]; planes: Float64Array; pi: number[]; mover: Color }[] = [];
   let result: Color | 0 = 0, terminal = "truncated";
   let leadPlies = 0, leadColor: Color | 0 = 0;
+  const repCount = new Map<string, number>(); // threefold-repetition tracking
 
   for (let ply = 0; ply < maxPlies; ply++) {
     const moves = generateMoves(s);
     if (moves.length === 0) { result = inCheck(s) ? ((-s.turn) as Color) : 0; terminal = inCheck(s) ? "checkmate" : "stalemate"; break; }
     if (s.halfmove >= 100) { result = 0; terminal = "draw50"; break; }
+    const reps = (repCount.get(positionKey(s)) ?? 0) + 1;
+    repCount.set(positionKey(s), reps);
+    if (reps >= 3) { result = 0; terminal = "repetition"; break; }
 
     // Temperature schedule: explore early (τ=1, sample ∝ visits), then play the
     // deciding/endgame phase greedily (τ→0, argmax visits) for sharper π and
@@ -89,9 +93,14 @@ export async function selfPlayGame(
 
   const finalMat = whiteMaterial(s.board);
   const decisive = terminal === "checkmate" || terminal === "adjudicated";
+  // Real draws (stalemate / 50-move / threefold repetition) are z = 0 — the
+  // true outcome — NOT a material proxy, so the net learns that shuffling a
+  // won position away is worth nothing and is pushed to convert. Only a
+  // genuinely unresolved maxPlies truncation keeps the soft material fallback.
+  const isDraw = terminal === "stalemate" || terminal === "draw50" || terminal === "repetition";
   const samples: AZSample[] = recs.map((r) => ({
     moveFeats: r.moveFeats, planes: r.planes, pi: r.pi,
-    z: decisive ? (result === r.mover ? 1 : -1) : Math.tanh(r.mover * finalMat * matScale),
+    z: decisive ? (result === r.mover ? 1 : -1) : isDraw ? 0 : Math.tanh(r.mover * finalMat * matScale),
   }));
   return { samples, result, terminal, plies: recs.length };
 }
