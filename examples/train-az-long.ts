@@ -35,6 +35,8 @@ const EVAL_EVERY = Number(process.env.CHESS_AZ_EVALEVERY ?? 10);
 const SAVE_EVERY = Number(process.env.CHESS_AZ_SAVEEVERY ?? 20);
 const GATE_GAMES = Number(process.env.CHESS_AZ_GATEGAMES ?? 20);
 const GATE_MARGIN = Number(process.env.CHESS_AZ_GATEMARGIN ?? 0.55);
+const TEMP_MOVES = Number(process.env.CHESS_AZ_TEMPMOVES ?? 24);   // plies of τ=1 before greedy
+const TERM_FRAC = Number(process.env.CHESS_AZ_TERMFRAC ?? 0.25);   // share of games run to a true terminal
 const RESUME = "checkpoints/latest-az.json", BEST = "checkpoints/best.json";
 
 const cloneNet = (policy: MLPPolicy, value: ConvValueNet): Net => {
@@ -68,6 +70,7 @@ console.log(`AZ overhaul — target ${TARGET}, ${GAMES} games × ${SIMS} sims, r
 for (let it = startIter + 1; it <= TARGET; it++) {
   const sp = await selfPlayBatch(policy, value, rng, {
     games: GAMES, numSimulations: SIMS, maxPlies: MAXPLIES, cPuct: 1.5, dirichletAlpha: 0.3, maxBatch: BATCH,
+    temperatureMoves: TEMP_MOVES, terminalFraction: TERM_FRAC,
   });
   buffer.push(sp.samples);
 

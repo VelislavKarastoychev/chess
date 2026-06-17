@@ -85,12 +85,21 @@ export class MLPPolicy {
    * evaluator score the moves of many MCTS leaves in a single matmul.
    */
   async rawScores(features: number[][]): Promise<Float64Array> {
+    return (await this.scoresTensor(features)).view as Float64Array;
+  }
+
+  /**
+   * Differentiable per-move scores for an [M, F] matrix → [M, 1] Tensor (no
+   * softmax). Same independence property as `rawScores`, but the graph is
+   * retained, so training can run ONE matmul over the concatenated moves of a
+   * whole minibatch and then take a segmented softmax + CE per position.
+   */
+  async scoresTensor(features: number[][]): Promise<Tensor> {
     const L = features.length;
     const X = toTensor(features);
     const ones = onesCol(L);
     const h = await (await (await X.times(this.W1)).plus(await ones.times(this.b1))).relu();
-    const scores = await (await h.times(this.W2)).plus(await ones.times(this.b2)); // [M,1]
-    return scores.view as Float64Array;
+    return await (await h.times(this.W2)).plus(await ones.times(this.b2)); // [M,1]
   }
 }
 

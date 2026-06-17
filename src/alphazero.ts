@@ -40,6 +40,8 @@ export interface AZRolloutOpts {
   dirichletAlpha?: number; materialScale?: number;
   adjudicateLead?: number;    // |material| ≥ this for `adjudicatePersist` plies ⇒ decisive
   adjudicatePersist?: number;
+  adjudicate?: boolean;       // false ⇒ play to a true terminal (learn to convert)
+  temperatureMoves?: number;  // plies of τ=1 sampling before switching to greedy (τ→0)
 }
 
 /** One MCTS self-play game through a shared (batched) evaluator → samples. */
@@ -49,6 +51,7 @@ export async function selfPlayGame(
   const sims = opts.numSimulations ?? 100, maxPlies = opts.maxPlies ?? 160;
   const cPuct = opts.cPuct ?? 1.5, dir = opts.dirichletAlpha ?? 0.3, matScale = opts.materialScale ?? 0.2;
   const adjLead = opts.adjudicateLead ?? 6, adjPersist = opts.adjudicatePersist ?? 6;
+  const adjudicate = opts.adjudicate ?? true, tempMoves = opts.temperatureMoves ?? 24;
 
   const s = startState();
   const recs: { moveFeats: number[][]; planes: Float64Array; pi: number[]; mover: Color }[] = [];
@@ -60,19 +63,28 @@ export async function selfPlayGame(
     if (moves.length === 0) { result = inCheck(s) ? ((-s.turn) as Color) : 0; terminal = inCheck(s) ? "checkmate" : "stalemate"; break; }
     if (s.halfmove >= 100) { result = 0; terminal = "draw50"; break; }
 
+    // Temperature schedule: explore early (τ=1, sample ∝ visits), then play the
+    // deciding/endgame phase greedily (τ→0, argmax visits) for sharper π and
+    // stronger play — AlphaZero's first-~30-plies-then-exploit schedule.
+    const temperature = ply < tempMoves ? 1 : 0;
     const res = await runMcts(chessEnv, evaluator, s, {
-      numSimulations: sims, cPuct, temperature: 1, dirichletAlpha: dir, backup: "negamax", rng,
+      numSimulations: sims, cPuct, temperature, dirichletAlpha: dir, backup: "negamax", rng,
     });
     recs.push({ moveFeats: featureMatrix(s, moves), planes: encodePlanes(s), pi: res.policy, mover: s.turn });
     makeMove(s, res.action);
 
     // Adjudication: a sustained decisive material lead counts as a win, so the
-    // value head sees real ±1 outcomes instead of endless truncated games.
-    const wm = whiteMaterial(s.board);
-    const cur: Color | 0 = Math.abs(wm) >= adjLead ? (Math.sign(wm) as Color) : 0;
-    if (cur !== 0 && cur === leadColor) leadPlies++;
-    else { leadColor = cur; leadPlies = cur !== 0 ? 1 : 0; }
-    if (leadPlies >= adjPersist) { result = leadColor as Color; terminal = "adjudicated"; break; }
+    // value head sees real ±1 outcomes instead of endless truncated games. NOTE
+    // this re-injects a material bias into z and stops the game before mate, so
+    // a fraction of games (adjudicate=false) play to a true terminal to teach
+    // conversion — watch the tactical suite for endgame regressions.
+    if (adjudicate) {
+      const wm = whiteMaterial(s.board);
+      const cur: Color | 0 = Math.abs(wm) >= adjLead ? (Math.sign(wm) as Color) : 0;
+      if (cur !== 0 && cur === leadColor) leadPlies++;
+      else { leadColor = cur; leadPlies = cur !== 0 ? 1 : 0; }
+      if (leadPlies >= adjPersist) { result = leadColor as Color; terminal = "adjudicated"; break; }
+    }
   }
 
   const finalMat = whiteMaterial(s.board);
@@ -96,9 +108,10 @@ export interface SelfPlayBatchResult {
 /** Run `games` self-play games CONCURRENTLY, coalescing leaf evals into batches. */
 export async function selfPlayBatch(
   policy: MLPPolicy, value: ConvValueNet, rng: () => number,
-  opts: AZRolloutOpts & { games?: number; maxBatch?: number } = {},
+  opts: AZRolloutOpts & { games?: number; maxBatch?: number; terminalFraction?: number } = {},
 ): Promise<SelfPlayBatchResult> {
   const games = opts.games ?? 16;
+  const termFrac = opts.terminalFraction ?? 0.25; // share of games played to a true terminal
   const ev = new BatchedEvaluator(policy, value, opts.maxBatch ?? 256);
   ev.active = games;
   const evaluate = ev.evaluator();
@@ -110,8 +123,9 @@ export async function selfPlayBatch(
   });
 
   let done = 0;
-  const results = await Promise.all(streams.map((r) =>
-    selfPlayGame(evaluate, r, opts).finally(() => { done++; ev.active = games - done; }),
+  const results = await Promise.all(streams.map((r, g) =>
+    selfPlayGame(evaluate, r, { ...opts, adjudicate: g >= Math.round(games * termFrac) })
+      .finally(() => { done++; ev.active = games - done; }),
   ));
 
   const samples: AZSample[] = [];
@@ -149,11 +163,18 @@ export async function trainStepAZ(
   const valueCoef = opts.valueCoef ?? 1.0;
   const B = samples.length;
 
-  // Policy: CE per position (moves scored independently, variable count).
+  // Policy: ONE matmul over every sample's moves concatenated (moves are scored
+  // independently), then a segmented softmax + CE per position — the expensive
+  // GEMM is batched; only the tiny per-segment softmax/CE stay per-sample.
+  const concat: number[][] = [];
+  const segOff: number[] = [], segLen: number[] = [];
+  for (const smp of samples) { segOff.push(concat.length); segLen.push(smp.moveFeats.length); for (const row of smp.moveFeats) concat.push(row); }
+  const scoresT = await policy.scoresTensor(concat); // [ΣL, 1], differentiable
   const polTerms: Tensor[] = [];
-  for (const smp of samples) {
-    const out = await policy.forward(smp.moveFeats);
-    polTerms.push(await (await rowVec(smp.pi).times(await out.probs.log())).neg()); // −Σ π log p
+  for (let i = 0; i < B; i++) {
+    const seg = await scoresT.sliceRows(segOff[i]!, segLen[i]!);     // [L,1]
+    const logp = await (await seg.softmax("column")).log();          // [L,1]
+    polTerms.push(await (await rowVec(samples[i]!.pi).times(logp)).neg()); // −Σ π log p
   }
   const policyLoss = await (await sumT(polTerms)).hadamard(scalar(1 / B));
 
