@@ -15,6 +15,7 @@ import {
   generateMoves, inCheck,
 } from "./rules";
 import { centralControl } from "./features";
+import { PLANES, BOARD_HW, encodePlanes, encodeBatch } from "./planes";
 
 /** Signed material balance from White's perspective (kings excluded). */
 export function whiteMaterial(board: Int8Array): number {
@@ -90,5 +91,72 @@ export class ValueNet {
     x.view.set(posFeat);
     const h = await (await (await x.times(this.W1)).plus(this.b1)).relu();
     return await (await (await h.times(this.W2)).plus(this.b2)).tanh();
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Convolutional value net — sees the raw board (12×8×8 planes) instead of 10
+// aggregate scalars. This is the real ceiling lift: a conv tower can read king
+// safety, pawn structure, passed pawns and hanging pieces directly off the
+// squares. Batched forward ([B,12,8,8] → [B,1]) so MCTS leaf evaluation and
+// training can amortise the (heavier) conv over many positions in one pass.
+// ───────────────────────────────────────────────────────────────────────────
+
+const convW = (cout: number, cin: number, k: number, seed: number): Tensor => {
+  const fan = cin * k * k;
+  return Tensor.random({ shape: [cout, cin, k, k], type: "float64", seed, from: -Math.sqrt(1 / fan), to: Math.sqrt(1 / fan), requiresGrad: true });
+};
+
+export interface ConvValueOpts { channels?: number; hidden?: number; seed?: number; }
+
+export class ConvValueNet {
+  readonly channels: number;
+  readonly hidden: number;
+  c1w: Tensor; c1b: Tensor;   // conv 12→C, 3×3 pad1
+  c2w: Tensor; c2b: Tensor;   // conv C→C, 3×3 pad1
+  fc1w: Tensor; fc1b: Tensor; // (C·64) → H
+  fc2w: Tensor; fc2b: Tensor; // H → 1
+  readonly kind = "conv" as const;
+
+  constructor(opts: ConvValueOpts = {}) {
+    const C = (this.channels = opts.channels ?? 16);
+    const H = (this.hidden = opts.hidden ?? 64);
+    const s = opts.seed ?? 99;
+    this.c1w = convW(C, PLANES, 3, s + 1);
+    this.c1b = Tensor.zeros({ shape: [C], type: "float64", requiresGrad: true });
+    this.c2w = convW(C, C, 3, s + 2);
+    this.c2b = Tensor.zeros({ shape: [C], type: "float64", requiresGrad: true });
+    this.fc1w = proj(C * BOARD_HW, H, s + 3);
+    this.fc1b = Tensor.zeros({ shape: [1, H], type: "float64", requiresGrad: true });
+    this.fc2w = proj(H, 1, s + 4);
+    this.fc2b = Tensor.zeros({ shape: [1, 1], type: "float64", requiresGrad: true });
+  }
+
+  parameters(): Tensor[] {
+    return [this.c1w, this.c1b, this.c2w, this.c2b, this.fc1w, this.fc1b, this.fc2w, this.fc2b];
+  }
+
+  /** Batched value over a [B·PLANE_DIM] planes buffer → [B,1] in (-1,1). */
+  async forwardPlanes(planes: Float64Array, B: number): Promise<Tensor> {
+    const x = new Tensor({ shape: [B, PLANES, 8, 8], type: "float64" });
+    x.view.set(planes);
+    let h = await (await x.conv2d(this.c1w, this.c1b, { stride: 1, padding: 1 })).relu(); // [B,C,8,8]
+    h = await (await h.conv2d(this.c2w, this.c2b, { stride: 1, padding: 1 })).relu();      // [B,C,8,8]
+    const flat = await h.reshape([B, this.channels * BOARD_HW]);                            // [B, C·64]
+    const ones = new Tensor({ shape: [B, 1], type: "float64" }); ones.view.fill(1);
+    let f = await (await flat.times(this.fc1w)).plus(await ones.times(this.fc1b));          // [B,H]
+    f = await f.relu();
+    const v = await (await f.times(this.fc2w)).plus(await ones.times(this.fc2b));           // [B,1]
+    return await v.tanh();
+  }
+
+  /** Value of one position (mover's perspective), [1,1]. */
+  async forward(s: State): Promise<Tensor> {
+    return await this.forwardPlanes(encodePlanes(s), 1);
+  }
+
+  /** Values of many positions in one batched forward → [B,1]. */
+  async forwardStates(states: State[]): Promise<Tensor> {
+    return await this.forwardPlanes(encodeBatch(states), states.length);
   }
 }

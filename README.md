@@ -59,7 +59,8 @@ bun run examples/move.ts e2e4                          # then play moves in UCI
 # Training
 bun run examples/train.ts          # REINFORCE actor-critic vs a random opponent
 bun run examples/train-v2.ts       # opponent-league actor-critic (more stable)
-bun run examples/train-az.ts       # AlphaZero-style: MCTS self-play → distil into the net
+bun run examples/train-az.ts       # AlphaZero-style: batched MCTS self-play → distil into the net
+bun run examples/train-az-long.ts  # long, resumable AZ: replay buffer + gating + tactical thermometer
 ```
 
 Moves are entered in **UCI**: `e2e4`, `g1f3`, `e1g1` (castle), `e7e8q` (promote).
@@ -75,11 +76,15 @@ Pre-trained weights ship in `checkpoints/` (`best.json` is the strongest).
 | `src/rules.ts` | Board, **legal** move generation, make/unmake, FEN, `perft` (verified vs published node counts) |
 | `src/features.ts` | `moveFeatures(s, m)` → 24-dim vector: capture, check, center control, mobility, hanging, develops, opens-line… |
 | `src/policy.ts` | `MLPPolicy` (scores each move) + `AttentionPolicy` (moves attend to each other) → `π(a\|s)` |
-| `src/value.ts` | `ValueNet` critic — position → value in (−1, 1) |
+| `src/planes.ts` | Board → `12×8×8` piece planes (mover-relative) for the conv value net |
+| `src/value.ts` | `ConvValueNet` — conv tower over the raw board → value in (−1, 1) (sees king safety / pawn structure / hanging pieces, not just material). Legacy scalar `ValueNet` kept for the REINFORCE trainers |
+| `src/batched-eval.ts` | Coalesces MCTS leaf evals across concurrent games into one batched conv forward |
 | `src/selfplay.ts` | REINFORCE actor-critic, material-shaped returns, opponent league |
-| `src/alphazero.ts` | AlphaZero loop: MCTS self-play, policy ← visit counts, value ← outcome |
+| `src/alphazero.ts` | AlphaZero loop: parallel batched self-play, **adjudicated** outcomes (real ±1 z), replay buffer, policy ← visit counts / value ← outcome |
+| `src/gating.ts` | Head-to-head match to gate promotion of a new champion |
+| `src/tactical.ts` | Fixed mate-in-1 test suite — a non-saturating thermometer |
 | `src/mcts-player.ts` | Wraps the nets as a PUCT search via `@euriklis/mcts` |
-| `src/model-io.ts` | Save/load checkpoints |
+| `src/model-io.ts` | Save/load checkpoints (migration-tolerant) |
 
 > 📐 See **[MATH.md](./MATH.md)** for the full formulation — every formula
 > (features, policy/value nets, PUCT, REINFORCE & AlphaZero losses, Adam)

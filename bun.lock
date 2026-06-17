@@ -4,7 +4,7 @@
     "": {
       "name": "@euriklis/chess",
       "dependencies": {
-        "@euriklis/mathematics": "latest",
+        "@euriklis/mathematics": "^1.5.0",
         "@euriklis/mcts": "latest",
       },
       "devDependencies": {
@@ -18,7 +18,7 @@
 
     "@euriklis/heterogeneous": ["@euriklis/heterogeneous@0.0.0", "https://npm.pkg.github.com/download/@euriklis/heterogeneous/0.0.0/f212082f862a240e78f5b61d10844599ca656955", { "peerDependencies": { "typescript": "^5" } }, "sha512-Pt7qg8hKuEYme46DWlP39ZcCTPigrDMQp6URYLYJ5n47DigT57/pyVMJMIBBxzhlFq6j+CQ03h3KOUzYO/CQww=="],
 
-    "@euriklis/mathematics": ["@euriklis/mathematics@1.3.0", "https://npm.pkg.github.com/download/@euriklis/mathematics/1.3.0/36accade822cfef0bd83b2fbcf85a4679bbb5db2", { "dependencies": { "@euriklis/heterogeneous": "latest", "@euriklis/udidi": "latest", "@euriklis/validator-ts": "latest", "@types/uuid": "^9.0.8", "numericjs": "^1.2.6", "uuid": "^9.0.1" }, "peerDependencies": { "typescript": "^5.4.3" } }, "sha512-WVTrgwuaYICGjdIgBACDKupP4Ne/UReFbKUUTLPosgiHUJIIHjQn0+9H1XnH3FVLSrtQxZTEZoVXz9OkpJLTBA=="],
+    "@euriklis/mathematics": ["@euriklis/mathematics@1.5.0", "https://npm.pkg.github.com/download/@euriklis/mathematics/1.5.0/287142ee57a63b1ae5ebba5d36c88e57b12407b3", { "dependencies": { "@euriklis/heterogeneous": "latest", "@euriklis/udidi": "latest", "@euriklis/validator-ts": "latest", "@types/uuid": "^9.0.8", "numericjs": "^1.2.6", "uuid": "^9.0.1" }, "peerDependencies": { "typescript": "^5.4.3" } }, "sha512-Yg4CgiVghmpIydWFtuyoz9vrStXNVxrvJrgZ90ywNlx5L5+dNtOt8eIW7JvfTkRIG1KfX79TnelDvvgBAheBfg=="],
 
     "@euriklis/mcts": ["@euriklis/mcts@0.1.0", "https://npm.pkg.github.com/download/@euriklis/mcts/0.1.0/c5d2d94251d89468fdb33de5d8c8ac163b20b72a", {}, "sha512-S1lEmmHw1WvOuTEq2pDZSYFzGtkBmhcZBeWMakTiw3OhFLltUayx4Lgw/4QxxxEDzm2ljzFNOq6qS6xp50V4jQ=="],
 

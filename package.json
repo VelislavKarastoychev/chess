@@ -11,7 +11,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@euriklis/mathematics": "latest",
+    "@euriklis/mathematics": "^1.5.0",
     "@euriklis/mcts": "latest"
   },
   "devDependencies": {

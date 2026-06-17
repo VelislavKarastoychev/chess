@@ -14,7 +14,7 @@ import {
   generateMoves, makeMove, inCheck,
 } from "./rules";
 import { featureMatrix } from "./features";
-import { positionFeatures, ValueNet } from "./value";
+import { ConvValueNet } from "./value";
 import { MLPPolicy } from "./policy";
 
 const cloneState = (s: State): State => ({
@@ -30,11 +30,11 @@ export const chessEnv: MctsEnv<State, Move> = {
   reward: (s) => (generateMoves(s).length === 0 ? (inCheck(s) ? -1 : 0) : 0), // side to move mated ⇒ −1
 };
 
-/** Neural leaf evaluator: policy → move priors, value net → position value. */
-export const neuralEvaluator = (policy: MLPPolicy, value: ValueNet): Evaluator<State, Move> =>
+/** Neural leaf evaluator: policy → move priors, conv value net → position value. */
+export const neuralEvaluator = (policy: MLPPolicy, value: ConvValueNet): Evaluator<State, Move> =>
   async (s, legal) => {
     const out = await policy.forward(featureMatrix(s, legal));
-    const v = await value.forward(positionFeatures(s));
+    const v = await value.forward(s);
     return { value: (v.view as Float64Array)[0]!, priors: Array.from(out.probs.view as Float64Array) };
   };
 
@@ -48,7 +48,7 @@ export interface MctsPlayOpts {
 
 /** Pick a move by MCTS over the trained nets. Returns the move and search stats. */
 export async function chooseMoveMcts(
-  state: State, policy: MLPPolicy, value: ValueNet, opts: MctsPlayOpts = {},
+  state: State, policy: MLPPolicy, value: ConvValueNet, opts: MctsPlayOpts = {},
 ): Promise<{ move: Move; search: MctsResult<Move> }> {
   const search = await runMcts(chessEnv, neuralEvaluator(policy, value), state, {
     numSimulations: opts.numSimulations ?? 200,

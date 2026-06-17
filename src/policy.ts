@@ -76,6 +76,22 @@ export class MLPPolicy {
     const probs = await scores.softmax("column");
     return { scores, probs };
   }
+
+  /**
+   * Raw per-move scores (logits, no softmax) for an arbitrary [M, F] feature
+   * matrix. Because each move is scored INDEPENDENTLY, the rows of M may come
+   * from several positions concatenated together — the caller then softmaxes
+   * each position's segment separately. This is what lets the batched leaf
+   * evaluator score the moves of many MCTS leaves in a single matmul.
+   */
+  async rawScores(features: number[][]): Promise<Float64Array> {
+    const L = features.length;
+    const X = toTensor(features);
+    const ones = onesCol(L);
+    const h = await (await (await X.times(this.W1)).plus(await ones.times(this.b1))).relu();
+    const scores = await (await h.times(this.W2)).plus(await ones.times(this.b2)); // [M,1]
+    return scores.view as Float64Array;
+  }
 }
 
 // ---------------------------------------------------------------------------

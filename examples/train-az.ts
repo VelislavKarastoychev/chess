@@ -8,36 +8,27 @@
  */
 import { Adam } from "@euriklis/mathematics/tensor";
 import { loadCheckpoint, restore, snapshot, saveCheckpoint } from "../src/model-io";
-import { selfPlayMcts, trainStepAZ, type AZSample } from "../src/alphazero";
+import { selfPlayBatch, trainStepAZ } from "../src/alphazero";
 import { evaluateVsRandom, mulberry32 } from "../src/selfplay";
 
 const ITERS = Number(process.env.CHESS_AZ_ITERS ?? 15);
-const GAMES = Number(process.env.CHESS_AZ_GAMES ?? 4);
-const SIMS = Number(process.env.CHESS_AZ_SIMS ?? 20);
+const GAMES = Number(process.env.CHESS_AZ_GAMES ?? 8);
+const SIMS = Number(process.env.CHESS_AZ_SIMS ?? 100);
 const rng = mulberry32(31);
 
-const { policy, value } = restore(await loadCheckpoint("checkpoints/best.json"));
+const { policy, value, freshValue } = restore(await loadCheckpoint("checkpoints/best.json"));
 const opt = new Adam([...policy.parameters(), ...value.parameters()], { lr: 0.003 });
-console.log(`AlphaZero training — warm-started, ${ITERS} iters × ${GAMES} MCTS games × ${SIMS} sims/move`);
+console.log(`AlphaZero training — warm-started${freshValue ? " (conv value fresh)" : ""}, ${ITERS} iters × ${GAMES} batched MCTS games × ${SIMS} sims/move`);
 
 const base = await evaluateVsRandom(policy, mulberry32(1), 30, 100);
 console.log(`base (raw policy) vs random: ${(base.score * 100).toFixed(1)}%  material ${base.material.toFixed(2)}\n`);
 
 let best = base.material;
 for (let it = 1; it <= ITERS; it++) {
-  const batch: AZSample[] = [];
-  let mates = 0, plies = 0;
-  for (let g = 0; g < GAMES; g++) {
-    const { samples, terminal, plies: pl } = await selfPlayMcts(policy, value, rng, {
-      numSimulations: SIMS, maxPlies: 45, cPuct: 1.5, dirichletAlpha: 0.3,
-    });
-    batch.push(...samples);
-    plies += pl;
-    if (terminal === "checkmate") mates++;
-  }
-  const { loss, policyLoss, valueLoss } = await trainStepAZ(policy, value, batch, opt, { valueCoef: 1.0 });
+  const sp = await selfPlayBatch(policy, value, rng, { games: GAMES, numSimulations: SIMS, maxPlies: 160, cPuct: 1.5, dirichletAlpha: 0.3 });
+  const { loss, policyLoss, valueLoss } = await trainStepAZ(policy, value, sp.samples, opt, { valueCoef: 1.0 });
   const ev = await evaluateVsRandom(policy, mulberry32(1), 24, 100);
-  console.log(`iter ${String(it).padStart(2)}  loss ${loss.toFixed(3)} (CE ${policyLoss.toFixed(3)}/V ${valueLoss.toFixed(3)})  decisive ${mates}/${GAMES}  avgPlies ${(plies / GAMES).toFixed(0)}  ►  vs random ${(ev.score * 100).toFixed(1)}% material ${ev.material.toFixed(2)}`);
+  console.log(`iter ${String(it).padStart(2)}  loss ${loss.toFixed(3)} (CE ${policyLoss.toFixed(3)}/V ${valueLoss.toFixed(3)})  decisive ${sp.decisive}/${GAMES}  avgPlies ${sp.avgPlies.toFixed(0)} batch≈${sp.avgBatch.toFixed(1)}  ►  vs random ${(ev.score * 100).toFixed(1)}% material ${ev.material.toFixed(2)}`);
   if (ev.material > best) { best = ev.material; await saveCheckpoint("checkpoints/best.json", snapshot(policy, value, { iter: it, mode: "alphazero", ...ev })); }
 }
 
