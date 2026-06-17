@@ -2,7 +2,7 @@
  * Long, resumable AlphaZero training (overhauled pipeline).
  *
  *   bun run examples/train-az-long.ts
- *   CHESS_AZ_TARGET=5000 CHESS_AZ_GAMES=16 CHESS_AZ_SIMS=120 bun run examples/train-az-long.ts
+ *   CHESS_AZ_TARGET=5000 CHESS_AZ_GAMES=32 CHESS_AZ_SIMS=60 bun run examples/train-az-long.ts
  *
  * Each iteration:
  *   1. self-play GAMES games concurrently (one BatchedEvaluator → the conv
@@ -14,6 +14,13 @@
  *
  *   best.json       — current champion (promoted by gating, not material)
  *   latest-az.json  — rolling resume point (meta.iter)
+ *
+ * Defaults are tuned for THROUGHPUT on the CPU tensor stack: the conv value
+ * forward is ~8 ms/batch, so per-iteration wall-clock is dominated by the
+ * number of MCTS leaf evals (games × plies × sims). maxPlies=160 + 120 sims is
+ * ~5 min/iter (untrained games drag to full length); the defaults below
+ * (sims 60, maxPlies 60) are ~40-50 s/iter — bump them up once the net is
+ * decent and games end sooner. See the profiling note in the repo history.
  */
 import { Adam } from "@euriklis/mathematics/tensor";
 import { loadCheckpoint, restore, snapshot, saveCheckpoint, type Checkpoint } from "../src/model-io";
@@ -25,12 +32,12 @@ import { MLPPolicy } from "../src/policy";
 import { ConvValueNet } from "../src/value";
 
 const TARGET = Number(process.env.CHESS_AZ_TARGET ?? 5000);
-const GAMES = Number(process.env.CHESS_AZ_GAMES ?? 16);
-const SIMS = Number(process.env.CHESS_AZ_SIMS ?? 120);
+const GAMES = Number(process.env.CHESS_AZ_GAMES ?? 32);    // more concurrent games → bigger eval batches
+const SIMS = Number(process.env.CHESS_AZ_SIMS ?? 60);      // ramp up once the net is decent
 const BATCH = Number(process.env.CHESS_AZ_BATCH ?? 256);
 const TRAIN_STEPS = Number(process.env.CHESS_AZ_TRAINSTEPS ?? 8);
 const REPLAY_CAP = Number(process.env.CHESS_AZ_REPLAY ?? 8000);
-const MAXPLIES = Number(process.env.CHESS_AZ_MAXPLIES ?? 160);
+const MAXPLIES = Number(process.env.CHESS_AZ_MAXPLIES ?? 60); // untrained games drag; cap short early
 const EVAL_EVERY = Number(process.env.CHESS_AZ_EVALEVERY ?? 10);
 const SAVE_EVERY = Number(process.env.CHESS_AZ_SAVEEVERY ?? 20);
 const GATE_GAMES = Number(process.env.CHESS_AZ_GATEGAMES ?? 20);
